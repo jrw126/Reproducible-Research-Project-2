@@ -1,0 +1,33 @@
+---
+title: "Reproducible Research Project 2"
+author: "John Wright"
+date: "Tuesday, July 22, 2014"
+output: html_document
+---
+
+# Synopsis
+The purpose of this anlaysis is to address the following questions:
+*Across the United States, which types of events (as indicated in the `EVTYPE` variable) are most harmful with respect to population health?
+*Across the United States, which types of events have the greatest economic consequences?
+
+# Data Processing
+
+Step 1. Download the data into your working directory and load it into R.
+```{r, echo=FALSE, eval=c(1, 2, 4)}
+dir <- getwd()
+url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+download.file(url = url, destfile = file.path(dir, "stormdata.csv"))
+data <- read.csv(file.path(dir, "stormdata.csv"), header = TRUE)
+```
+
+Step 2. Review the documentation and research the data source. The raw variables are constructed/defined can be found in the [National Weather Service Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) and the [National Climatic Data Center Storm Events FAW](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf). The data set goes back to 1950. According to the [NOAA website](http://www.ncdc.noaa.gov/stormevents/details.jsp), from 1950 to 1954 only tornado events were recorded and from 1955 to 1995 only tornado, thunderstorm wind and hail events were recorded. All 48 Event types from [NWS Directive 10-1605](http://www.ncdc.noaa.gov/stormevents/pd01016005curr.pdf) weren't recorded until January of 1996. The NOAA switched from unformatted text files to more modern data storage methods at the same time. For these reasons, any record with a `BGN_DATE` before January 1, 1996 has been excluded.
+```{r, echo=TRUE}
+data$BGN_DATE <- as.Date(as.character(data$BGN_DATE), format = "%m/%d/%Y")
+data <- subset(data, BGN_DATE > as.Date("1996-01-01"))
+```
+
+Step 3. Check for columns with NA values.
+```{r, echo=TRUE}
+missingCols <- sapply(1:ncol(data), FUN = function(x) sum(is.na(data[, x])))
+data.frame(Column = colnames(data)[missingCols > 0], Missing = missingCols[missingCols > 0])
+```
