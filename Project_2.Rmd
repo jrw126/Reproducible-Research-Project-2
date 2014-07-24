@@ -13,7 +13,7 @@ The purpose of this anlaysis is to address the following questions:
 # Data Processing
 
 Step 1. Download the data into your working directory and load it into R.
-```{r, echo=FALSE, eval=c(1, 2, 4)}
+```{r, echo=FALSE, cache=TRUE}
 dir <- getwd()
 url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
 download.file(url = url, destfile = file.path(dir, "stormdata.csv"))
@@ -26,8 +26,82 @@ data$BGN_DATE <- as.Date(as.character(data$BGN_DATE), format = "%m/%d/%Y")
 data <- subset(data, BGN_DATE > as.Date("1996-01-01"))
 ```
 
+Step 3. The `EVTYPE` variable has many levels, however quite a few of them are clearly duplicates or, for the purposes of this project, should be consolidated. For example:
+```{r, echo=TRUE}
+unique(grep("HEAVY RAIN", data$EVTYPE, value = TRUE))
+```
+
+The following steps were taken to clean and standardize the `EVTYPE` variable down to the official 48 event types:
+```{r, echo=TRUE}
+library(stringr)
+data$EVTYPE <- str_trim(toupper(as.character(data$EVTYPE)))       # Convert EVTYPE to character class, upper case, and remove leading and trailing spaces.
+data$EVTYPE <- gsub("/|-", " ", data$EVTYPE)                      # Replace "/" and "-" characters with spaces.
+data$EVTYPE <- gsub("& |\\.|\\(|\\)|,|[0-9]", "", data$EVTYPE)    # Remove all non alphabetical characters.
+data <- data[!grepl("SUMMARY", data$EVTYPE), ]                    # Remove any "SUMMARY..." event types. These records have lots of missing data and 
+                                                                  # events that they refer to should be represented in other records.
+data$EVTYPE <- str_trim(gsub(" G$|  ", "", data$EVTYPE))          # Remove trailing "G" or duplicated whitespace caused by earlier cleaning steps.
+abbrv <- c("TSTM", "CSTL", "SML", "FLD", "FLDG", "WND")           # Create a vector of the abbreviations used in the remaining event types.
+long <- c("THUNDERSTORM", "COASTAL", "SMALL",                     # Create a vector of the long version of the abbreviation.
+          "FLOOD", "FLOOD", "WIND")   
+for (i in 1:length(abbrv)) {                                      # Replace all abbreviations with their longer version.
+      data$EVTYPE <- gsub(abbrv[i], long[i], data$EVTYPE)
+}
+
+NWStypes <- c("ASTRONOMICAL LOW TIDE",                            # Store a vector of all 48 official types of event.
+              "AVALANCHE",                                        # The list can be found in this document: 
+              "BLIZZARD",                                         # http://www.ncdc.noaa.gov/stormevents/pd01016005curr.pdf
+              "COASTAL FLOOD",
+              "COLD WIND CHILL",
+              "DEBRIS FLOW",
+              "DENSE FOG",
+              "DENSE SMOKE",
+              "DROUGHT",
+              "DUST DEVIL",
+              "DUST STORM",
+              "EXCESSIVE HEAT",
+              "EXTREME COLD WIND CHILL",
+              "FLASH FLOOD",
+              "FLOOD",
+              "FREEZING FOG",
+              "FROST FREEZE",
+              "FUNNEL CLOUD",
+              "HAIL",
+              "HEAT",
+              "HEAVY RAIN",
+              "HEAVY SNOW",
+              "HIGH SURF",
+              "HIGH WIND",
+              "HURRICANE TYPHOON",
+              "ICE STORM",
+              "LAKESHORE FLOOD",
+              "LAKE EFFECT SNOW",
+              "LIGHTNING",
+              "MARINE HAIL",
+              "MARINE HIGH WIND",
+              "MARINE STRONG WIND",
+              "MARINE THUNDERSTORM WIND",
+              "RIP CURRENT",
+              "SEICHE",
+              "SLEET",
+              "STORM TIDE",
+              "STRONG WIND",
+              "THUNDERSTORM WIND",
+              "TORNADO",
+              "TROPICAL DEPRESSION",
+              "TROPICAL STORM",
+              "TSUNAMI",
+              "VOLCANIC ASH",
+              "WATERSPOUT",
+              "WILDFIRE",
+              "WINTER STORM",
+              "WINTER WEATHER")
+
+```
+
 Step 3. Check for columns with NA values.
 ```{r, echo=TRUE}
 missingCols <- sapply(1:ncol(data), FUN = function(x) sum(is.na(data[, x])))
-data.frame(Column = colnames(data)[missingCols > 0], Missing = missingCols[missingCols > 0])
+data.frame(Column = colnames(data)[missingCols > 0], NAs = missingCols[missingCols > 0])
 ```
+
+
