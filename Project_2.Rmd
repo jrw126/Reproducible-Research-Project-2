@@ -13,7 +13,7 @@ The purpose of this anlaysis is to address the following questions:
 # Data Processing
 
 Step 1. Download the data into your working directory and load it into R.
-```{r, echo=FALSE, cache=TRUE}
+```{r, echo=TRUE, cache=TRUE}
 dir <- getwd()
 url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
 download.file(url = url, destfile = file.path(dir, "stormdata.csv"))
@@ -31,7 +31,7 @@ Step 3. The `EVTYPE` variable has many levels, however quite a few of them are c
 unique(grep("HEAVY RAIN", data$EVTYPE, value = TRUE))
 ```
 
-The following steps were taken to clean and standardize the `EVTYPE` variable down to the official 48 event types:
+The following steps were taken to clean and standardize the `EVTYPE` variable down to the official 48 event types (at most):
 ```{r, echo=TRUE}
 library(stringr)
 data$EVTYPE <- str_trim(toupper(as.character(data$EVTYPE)))       # Convert EVTYPE to character class, upper case, and remove leading and trailing spaces.
@@ -47,7 +47,8 @@ for (i in 1:length(abbrv)) {                                      # Replace all 
       data$EVTYPE <- gsub(abbrv[i], long[i], data$EVTYPE)
 }
 
-NWStypes <- c("ASTRONOMICAL LOW TIDE",                            # Store a vector of all 48 official types of event.
+NWStypes <- data.frame(EVTYPE = 
+            c("ASTRONOMICAL LOW TIDE",                            # Store a vector of all 48 official types of event.
               "AVALANCHE",                                        # The list can be found in this document: 
               "BLIZZARD",                                         # http://www.ncdc.noaa.gov/stormevents/pd01016005curr.pdf
               "COASTAL FLOOD",
@@ -94,8 +95,12 @@ NWStypes <- c("ASTRONOMICAL LOW TIDE",                            # Store a vect
               "WATERSPOUT",
               "WILDFIRE",
               "WINTER STORM",
-              "WINTER WEATHER")
+              "WINTER WEATHER"))
 
+library(sqldf)
+data$rowid <- seq(1:nrow(data))
+data <- sqldf("SELECT * FROM data x JOIN NWStypes y ON x.EVTYPE = y.EVTYPE") # Filter out records that don't match one of the 48 event types
+data <- data[!duplicated(data), ]                                            # Check for duplicates
 ```
 
 Step 3. Check for columns with NA values.
@@ -104,4 +109,34 @@ missingCols <- sapply(1:ncol(data), FUN = function(x) sum(is.na(data[, x])))
 data.frame(Column = colnames(data)[missingCols > 0], NAs = missingCols[missingCols > 0])
 ```
 
+# Analysis
+Which event types are the most harmful to population health? The variables `FATALITIES` and `INJURIES` should be helpful in answering this question.
+```{r, echo=TRUE}
+library(ggplot2)
+library(plyr)
+data$EVTYPE <- as.factor(data$EVTYPE)
 
+deathRank <- aggregate(FATALITIES ~ EVTYPE, data = data, FUN = sum)     # Subset the data to only include the top 10 deadliest events
+deathRank <- deathRank[order(-deathRank$FATALITIES), ]
+deadliest <- as.character(deathRank$EVTYPE[1:10])
+deadlyData <- data[data$EVTYPE %in% deadliest, ]
+deadlyData.t <- ddply(deadlyData, .(EVTYPE), transform, len = length(FATALITIES))
+ggplot(deadlyData.t, aes(x = BGN_DATE, color = EVTYPE)) + geom_step(aes(len = len, y = ..y.. * len), stat = "ecdf", size = 1)
+#OR#
+deadlyData.t <- ddply(deadlyData, .(EVTYPE), transform, cf = cumsum(FATALITIES))
+ggplot(deadlyData.t, aes(x = BGN_DATE, y = cf, color = EVTYPE)) + geom_line()
+
+# Cumulative amount of deaths per EVTYPE
+ggplot(data, aes(x = BGN_DATE, y = cumsum(FATALITIES), col = EVTYPE)) + geom_line()
+
+# Try this one with top 10 highest deaths only
+data.t <- transform(data, y = runif(nrow(data)))
+data.t <- ddply(data.t, .(EVTYPE), transform, cf = cumsum(FATALITIES))
+qplot(x = BGN_DATE, y = cf, col = EVTYPE, data = data.t, geom = "smooth") + geom_line()
+
+
+#a different attempt, THIS ONE WORKS
+data.t2 <- ddply(data, .(EVTYPE), transform, len = length(FATALITIES))
+ggplot(data.t2, aes(x = BGN_DATE, color = EVTYPE)) + geom_step(aes(len = len, y = ..y.. * len), stat = "ecdf", size = 1)
+```
+# Results
