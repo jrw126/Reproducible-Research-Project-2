@@ -1,26 +1,27 @@
 ---
-title: "Reproducible Research Project 2"
-author: "John Wright"
-date: "Tuesday, July 22, 2014"
+title: "Impact of Storm Events in the United States"
 output: html_document
 ---
 
-# Synopsis
+## Synopsis
 The purpose of this anlaysis is to address the following questions:
-*Across the United States, which types of events (as indicated in the `EVTYPE` variable) are most harmful with respect to population health?
-*Across the United States, which types of events have the greatest economic consequences?
 
-# Data Processing
+*     Across the United States, which types of events (as indicated in the `EVTYPE` variable) are most harmful with respect to population health?
+*     Across the United States, which types of events have the greatest economic consequences?
 
-Step 1. Download the data into your working directory and load it into R.
+This analysis shows the combined total fatalities and injuries over time for each of the top ten most harmful event types and the combined proprety and crop damage over time for the top ten most damaging event types. These graphs should help the reader visualize which event types are the most impactful. The steps taken to load, clean and analyze the data are all enumerated below.
+
+## Data Processing
+
+Step 1. Download the data into the working directory and load it into R.
 ```{r, echo=TRUE, cache=TRUE}
 dir <- getwd()
-url <- "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
+url <- "http://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2"
 download.file(url = url, destfile = file.path(dir, "stormdata.csv"))
 data <- read.csv(file.path(dir, "stormdata.csv"), header = TRUE)
 ```
 
-Step 2. Review the documentation and research the data source. The raw variables are constructed/defined can be found in the [National Weather Service Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) and the [National Climatic Data Center Storm Events FAW](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf). The data set goes back to 1950. According to the [NOAA website](http://www.ncdc.noaa.gov/stormevents/details.jsp), from 1950 to 1954 only tornado events were recorded and from 1955 to 1995 only tornado, thunderstorm wind and hail events were recorded. All 48 Event types from [NWS Directive 10-1605](http://www.ncdc.noaa.gov/stormevents/pd01016005curr.pdf) weren't recorded until January of 1996. The NOAA switched from unformatted text files to more modern data storage methods at the same time. For these reasons, any record with a `BGN_DATE` before January 1, 1996 has been excluded.
+Step 2. Review the documentation and research the data source. The raw variables are defined in the [National Weather Service Storm Data Documentation](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf) and the [National Climatic Data Center Storm Events FAQ](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2FNCDC%20Storm%20Events-FAQ%20Page.pdf). The data set goes back to 1950. According to the [NOAA website](http://www.ncdc.noaa.gov/stormevents/details.jsp), from 1950 to 1954 only tornado events were recorded and from 1955 to 1995 only tornado, thunderstorm wind and hail events were recorded. All 48 Event types from [NWS Directive 10-1605](http://www.ncdc.noaa.gov/stormevents/pd01016005curr.pdf) weren't recorded until January of 1996. The NOAA switched from unformatted text files to more modern data storage methods at the same time. For these reasons, any record with a `BGN_DATE` before January 1, 1996 has been excluded.
 ```{r, echo=TRUE}
 data$BGN_DATE <- as.Date(as.character(data$BGN_DATE), format = "%m/%d/%Y")
 data <- subset(data, BGN_DATE > as.Date("1996-01-01"))
@@ -32,7 +33,14 @@ unique(grep("HEAVY RAIN", data$EVTYPE, value = TRUE))
 ```
 
 The following steps were taken to clean and standardize the `EVTYPE` variable down to the official 48 event types (at most):
-```{r, echo=TRUE}
+
+      *Remove any punctuation, extra whitespace, symbols, or numbers from the text
+      *Remove non-meaningful event types such as "Summary"
+      *Convert abbreviations to whole words
+      *Remove any records that do not match up to an official NOAA event type
+      *Remove duplicates
+      *Sort by event type and then beginning date
+```{r, echo=TRUE, message=FALSE, cache=TRUE}
 library(stringr)
 data$EVTYPE <- str_trim(toupper(as.character(data$EVTYPE)))       # Convert EVTYPE to character class, upper case, and remove leading and trailing spaces.
 data$EVTYPE <- gsub("/|-", " ", data$EVTYPE)                      # Replace "/" and "-" characters with spaces.
@@ -101,42 +109,70 @@ library(sqldf)
 data$rowid <- seq(1:nrow(data))
 data <- sqldf("SELECT * FROM data x JOIN NWStypes y ON x.EVTYPE = y.EVTYPE") # Filter out records that don't match one of the 48 event types
 data <- data[!duplicated(data), ]                                            # Check for duplicates
+data$EVTYPE <- as.factor(data$EVTYPE)
+data <- data[order(data$EVTYPE, data$BGN_DATE), ]                            # Sort the data by event type then beginning date.
 ```
 
-Step 3. Check for columns with NA values.
-```{r, echo=TRUE}
-missingCols <- sapply(1:ncol(data), FUN = function(x) sum(is.na(data[, x])))
-data.frame(Column = colnames(data)[missingCols > 0], NAs = missingCols[missingCols > 0])
-```
-
-# Analysis
-Which event types are the most harmful to population health? The variables `FATALITIES` and `INJURIES` should be helpful in answering this question.
-```{r, echo=TRUE}
+## Analysis
+Which event types are the most harmful to population health in the United States? Adding the variables `FATALITIES` and `INJURIES` together should be helpful in answering this question. The code below uses the combined `PAIN` variable to determine the top ten most harmful events, then calculates the cumulative sum of harmful events over time. The cumulative sum is graphed over the `BGN_DATE` time period for the most harmful events.
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=14, fig.height=8}
 library(ggplot2)
 library(plyr)
-data$EVTYPE <- as.factor(data$EVTYPE)
-
-deathRank <- aggregate(FATALITIES ~ EVTYPE, data = data, FUN = sum)     # Subset the data to only include the top 10 deadliest events
-deathRank <- deathRank[order(-deathRank$FATALITIES), ]
-deadliest <- as.character(deathRank$EVTYPE[1:10])
-deadlyData <- data[data$EVTYPE %in% deadliest, ]
-deadlyData.t <- ddply(deadlyData, .(EVTYPE), transform, len = length(FATALITIES))
-ggplot(deadlyData.t, aes(x = BGN_DATE, color = EVTYPE)) + geom_step(aes(len = len, y = ..y.. * len), stat = "ecdf", size = 1)
-#OR#
-deadlyData.t <- ddply(deadlyData, .(EVTYPE), transform, cf = cumsum(FATALITIES))
-ggplot(deadlyData.t, aes(x = BGN_DATE, y = cf, color = EVTYPE)) + geom_line()
-
-# Cumulative amount of deaths per EVTYPE
-ggplot(data, aes(x = BGN_DATE, y = cumsum(FATALITIES), col = EVTYPE)) + geom_line()
-
-# Try this one with top 10 highest deaths only
-data.t <- transform(data, y = runif(nrow(data)))
-data.t <- ddply(data.t, .(EVTYPE), transform, cf = cumsum(FATALITIES))
-qplot(x = BGN_DATE, y = cf, col = EVTYPE, data = data.t, geom = "smooth") + geom_line()
-
-
-#a different attempt, THIS ONE WORKS
-data.t2 <- ddply(data, .(EVTYPE), transform, len = length(FATALITIES))
-ggplot(data.t2, aes(x = BGN_DATE, color = EVTYPE)) + geom_step(aes(len = len, y = ..y.. * len), stat = "ecdf", size = 1)
+library(scales)
+data$PAIN <- data$FATALITIES + data$INJURIES                                  # Add up fatalities with injuries for total harm caused per event.
+painRank <- aggregate(PAIN ~ EVTYPE, data = data, FUN = sum)                  # Subset the data to only include the top 10 most harmful events.
+painRank <- painRank[order(-painRank$PAIN), ]
+maxPain <- as.character(painRank$EVTYPE[1:10])
+painfulData <- data[data$EVTYPE %in% maxPain, ]
+painfulData.t <- ddply(painfulData, .(EVTYPE), transform, cf = cumsum(PAIN))  # Calculate the cumulative sum of harmful events for each event type.
+ggplot(painfulData.t, aes(x = BGN_DATE, y = cf, color = EVTYPE)) +            # Graph of the cumulative sum of harmful events over time.
+      geom_line(size = 1.5) +
+      xlab("Date") +
+      ylab("Cumulative Fatal or Injurious Incidents") +
+      ggtitle("Cumulative Harm per Event Type\n 1996 - 2011") +
+      theme(plot.title = element_text(face = "bold")) +
+      scale_x_date(breaks = "1 year", labels = date_format("%Y")) +
+      scale_colour_discrete(name = "EVENT TYPE")
 ```
-# Results
+
+Which event types have the greatest economic consequences across the United States? Adding the variables `PROPDMG` and `CROPDMG` together should be helpful in answering this question. According to [NWS Directive 10-1605](http://www.ncdc.noaa.gov/stormevents/pd01016005curr.pdf), the `PROPDMGEXP` and `CROPDMGEXP` identifies the quantity in `PROPDMG` and `CROPDMG` as thousands, millions or billions. Some additional steps were taken to clean the variables used for this portion of the analysis:
+
+      *All property and crop damage value indicators were converted to upper case.
+      *Any indicators that were not thousands, millions or billions were excluded.
+      *Any missing indicators were treated as thousands.
+      
+After these transformations are made, the code below combines the `PROPDMG` and `CROPDMG` variables into a new variable, `DAMAGE`. This was calculated by multiplying the `PROPDMG` or `CROPDMG` by its respective expense type to return the total damage. The total crop and property damage in thousands, millions or billions were then added together to create `DAMAGE`. The `DAMAGE` variable was used to determine the top ten most economically damaging event types, then the cumulative sum of damages per event type were graphed over the `BGN_DATE` time period. the cumulative sum of economic damages was divided by one billion for better viewability.
+```{r, echo=TRUE, warning=FALSE, message=FALSE, fig.width=14, fig.height=8}
+data$CROPDMGEXP <- toupper(as.character(data$CROPDMGEXP))
+data$PROPDMGEXP <- toupper(as.character(data$PROPDMGEXP))
+validExp <- c("K", "M", "B")
+conv <- c("1000", "1000000", "1000000000")
+data <- data[data$CROPDMGEXP %in% validExp | data$PROPDMGEXP %in% validExp, ]       # Subset the data to only include valid EXP types.
+for (i in 1:3) {
+      data$CROPDMGEXP[data$CROPDMGEXP == validExp[i]] <- conv[i]
+      data$PROPDMGEXP[data$PROPDMGEXP == validExp[i]] <- conv[i]
+}
+
+data$CROPDMGEXP <- as.numeric(data$CROPDMGEXP)
+data$CROPDMGEXP[is.na(data$CROPDMGEXP)] <- 1000                                     # Treat any missing expense types as thousands.
+data$PROPDMGEXP <- as.numeric(data$PROPDMGEXP)
+data$PROPDMGEXP[is.na(data$PROPDMGEXP)] <- 1000
+data$DAMAGE <- (data$PROPDMG * data$PROPDMGEXP) + (data$CROPDMG * data$CROPDMGEXP)  # Calculate the total cost of damages (property and crop).
+costRank <- aggregate(DAMAGE ~ EVTYPE, data = data, FUN = sum)                      # Calculate the total damage per event and find the top 10.
+costRank <- costRank[order(-costRank$DAMAGE), ]
+maxCost <- as.character(costRank$EVTYPE[1:10])
+costlyData <- data[data$EVTYPE %in% maxCost, ]
+costlyData.t <- ddply(costlyData, .(EVTYPE), transform, cc = cumsum(DAMAGE))        # Calculate the cumulative sum of total damages over time.
+costlyData.t$cc <- costlyData.t$cc / 1000000000
+ggplot(costlyData.t, aes(x = BGN_DATE, y = cc, color = EVTYPE)) +                   # Graph of the cumulative sum of damages over time.
+      geom_line(size = 1.5) +
+      xlab("Date") +
+      ylab("Cumulative Economic Damage in Billions of USD") +
+      ggtitle("Cumulative Economic Damage per Event Type\n 1996 - 2011") +
+      theme(plot.title = element_text(face = "bold")) +
+      scale_x_date(breaks = "1 year", labels = date_format("%Y")) +
+      scale_colour_discrete(name = "EVENT TYPE")
+```
+
+## Results
+As shown in the graphs above, the most harmful events by far are tornadoes, with excessive heat coming in at a distant second place. The events with the greatest economic consequences are floods by a wide margin. Hurricane typhoons are quite damaging as well, however there is only data available for this phenomenon at a very narrow time interval relative to other event types. One important fact to be aware of is that Storm Data Preparers are required to report flood damaages, even if it is an estimate. For other event types, they are not required to enter any data. This could result in property and crop damage data for non-flood events being understated relative to floods.
